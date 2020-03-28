@@ -28,10 +28,11 @@ module GHC.Hs.Extension where
 import GhcPrelude
 
 import Data.Data hiding ( Fixity )
+import Data.Semigroup
 import Name
 import RdrName
 import Var
-import Outputable
+import Outputable hiding ((<>))
 import SrcLoc (Located, GenLocated(..), RealLocated, SrcSpan, noSrcSpan)
 import Lexer (AddApiAnn)
 import ApiAnnotation
@@ -261,6 +262,20 @@ data SrcSpanAnn = SrcSpanAnn { ann :: ApiAnn, locA :: SrcSpan }
 instance Outputable SrcSpanAnn where
   ppr (SrcSpanAnn a l) = text "SrcSpanAnn" <+> ppr a <+> ppr l
 
+-- ---------------------------------------------------------------------
+-- Managing annotations for lists
+-- ---------------------------------------------------------------------
+
+data AnnList
+  = AnnList {
+      alOpenLoc      :: SrcSpan,
+      alOpenKeyword  :: AnnKeywordId,
+      alCloseLoc     :: SrcSpan,
+      alCloseKeyword :: AnnKeywordId
+      } deriving (Data)
+
+-- ---------------------------------------------------------------------
+
 reAnn :: [AddApiAnn] -> ApiAnnComments -> Located a -> LocatedA a
 reAnn anns cs (L l a) = L (SrcSpanAnn (ApiAnn anns cs) l) a
 
@@ -292,6 +307,16 @@ addAnns :: ApiAnn -> [AddApiAnn] -> ApiAnnComments -> ApiAnn
 addAnns (ApiAnn as1 cs) as2 cs2 = ApiAnn (as1 ++ as2) (cs ++ cs2)
 addAnns ApiAnnNotUsed [] [] = ApiAnnNotUsed
 addAnns ApiAnnNotUsed as cs = ApiAnn as cs
+
+
+instance (Semigroup a) => Semigroup (ApiAnn' a) where
+  ApiAnnNotUsed <> x = x
+  x <> ApiAnnNotUsed = x
+  (ApiAnn a1 b1) <> (ApiAnn a2 b2) = ApiAnn (a1 <> a2) (b1 <> b2)
+
+instance (Monoid a) => Monoid (ApiAnn' a) where
+  mempty = ApiAnnNotUsed
+
 
 instance (Outputable a) => Outputable (ApiAnn' a) where
   ppr (ApiAnn a c)  = text "ApiAnn" <+> ppr a <+> ppr c
@@ -559,6 +584,11 @@ type family XXAnnDecl      x
 type family XCRoleAnnotDecl  x
 type family XXRoleAnnotDecl  x
 
+-- -------------------------------------
+-- InjectivityAnn type families
+type family XCInjectivityAnn  x
+type family XXInjectivityAnn  x
+
 -- =====================================================================
 -- Type families for the HsExpr extension points
 
@@ -825,9 +855,6 @@ type family XIEGroup           x
 type family XIEDoc             x
 type family XIEDocNamed        x
 type family XXIE               x
-
--- -------------------------------------
-
 
 -- =====================================================================
 -- End of Type family definitions

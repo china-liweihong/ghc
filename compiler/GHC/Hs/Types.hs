@@ -282,7 +282,7 @@ quantified in left-to-right order in kind signatures is nice since:
 -}
 
 -- | Located Haskell Context
-type LHsContext pass = Located (HsContext pass)
+type LHsContext pass = LocatedA (HsContext pass)
       -- ^ 'ApiAnnotation.AnnKeywordId' : 'ApiAnnotation.AnnUnit'
       -- For details on above see note [Api annotations] in ApiAnnotation
 
@@ -292,7 +292,7 @@ noLHsContext :: LHsContext pass
 --     class () => C a where ...
 -- from
 --     class C a where ...
-noLHsContext = noLoc []
+noLHsContext = noLocA []
 
 -- | Haskell Context
 type HsContext pass = [LHsType pass]

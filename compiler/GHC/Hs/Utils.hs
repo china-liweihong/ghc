@@ -673,7 +673,7 @@ typeToLHsType ty
       = case af of
           VisArg   -> nlHsFunTy (go arg) (go res)
           InvisArg | (theta, tau) <- tcSplitPhiTy ty
-                   -> noLoc (HsQualTy { hst_ctxt = noLoc (map go theta)
+                   -> noLoc (HsQualTy { hst_ctxt = noLocA (map go theta)
                                       , hst_xqual = noAnn
                                       , hst_body = go tau })
 

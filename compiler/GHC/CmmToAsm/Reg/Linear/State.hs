@@ -1,4 +1,5 @@
 {-# LANGUAGE CPP, PatternSynonyms, DeriveFunctor #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 #if !defined(GHC_LOADED_INTO_GHCI)
 {-# LANGUAGE UnboxedTuples #-}
@@ -111,7 +112,8 @@ runR config block_assig freeregs assig stack us thing =
                 , ra_us         = us
                 , ra_spills     = []
                 , ra_config     = config
-                , ra_fixups     = [] })
+                , ra_fixups     = []
+                , ra_sugg_assig = assig })
    of
         RA_Result state returned_thing
          ->     (ra_blockassig state, ra_stack state, makeRAStats state, returned_thing)

@@ -24,7 +24,6 @@ module GHC.StgToCmm.Closure (
         LambdaFormInfo,         -- Abstract
         StandardFormInfo,        -- ...ditto...
         mkLFThunk, mkLFReEntrant, mkConLFInfo, mkSelectorLFInfo,
-        mkMkStringLFInfo,
         mkApLFInfo, mkLFImported, mkLFArgument, mkLFLetNoEscape,
         mkLFStringLit,
         lfDynTag,
@@ -88,7 +87,6 @@ import GHC.Types.Basic
 import Outputable
 import GHC.Driver.Session
 import Util
-import GHC.Stack (HasCallStack, prettyCallStack, callStack)
 
 import Data.Coerce (coerce)
 import qualified Data.ByteString.Char8 as BS8
@@ -260,8 +258,6 @@ data StandardFormInfo
         -- in the RTS to save space.
         RepArity                -- Arity, n
 
-  | MkStringThunk
-
 ------------------------------------------------------
 --                Building LambdaFormInfo
 ------------------------------------------------------
@@ -321,10 +317,6 @@ mkSelectorLFInfo :: Id -> Int -> Bool -> LambdaFormInfo
 mkSelectorLFInfo id offset updatable
   = LFThunk NotTopLevel False updatable (SelectorThunk offset)
         (might_be_a_function (idType id))
-
--------------
-mkMkStringLFInfo :: Id -> LambdaFormInfo
-mkMkStringLFInfo id = LFThunk TopLevel True True MkStringThunk False
 
 -------------
 mkApLFInfo :: Id -> UpdateFlag -> Arity -> LambdaFormInfo
@@ -675,9 +667,7 @@ data ClosureInfo
 -- | Convert from 'ClosureInfo' to 'CmmInfoTable'.
 mkCmmInfo :: HasCallStack => ClosureInfo -> Id -> CostCentreStack -> CmmInfoTable
 mkCmmInfo ClosureInfo {..} id ccs
-  = pprTrace "mkCmmInfo" (text "info table label:" <+> ppr closureInfoLabel $$
-                          text (prettyCallStack callStack)) $
-    CmmInfoTable { cit_lbl  = closureInfoLabel
+  = CmmInfoTable { cit_lbl  = closureInfoLabel
                  , cit_rep  = closureSMRep
                  , cit_prof = closureProf
                  , cit_srt  = Nothing
@@ -870,9 +860,6 @@ mkClosureInfoTableLabel id lf_info
 
         LFThunk _ _ upd_flag (ApThunk arity) _
                       -> mkApInfoTableLabel upd_flag arity
-
-        LFThunk TopLevel _ _ MkStringThunk _
-                      -> mkMkStringInfoTableLabel
 
         LFThunk{}     -> std_mk_lbl name cafs
         LFReEntrant{} -> std_mk_lbl name cafs

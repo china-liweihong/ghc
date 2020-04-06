@@ -291,7 +291,7 @@ INFO_TABLE(stg_ap_7_upd,7,0,THUNK,"stg_ap_7_upd_info","stg_ap_7_upd_info")
    Making strings
    -------------------------------------------------------------------------- */
 
-INFO_TABLE(stg_MK_STRING, 0, 0, THUNK_STATIC, "stg_MK_STRING", "stg_MK_STRING")
+INFO_TABLE(stg_MK_STRING, 0, 1, THUNK_STATIC, "stg_MK_STRING", "stg_MK_STRING")
     (P_ node)
 {
     W_ newCAF_ret;

@@ -250,6 +250,10 @@ mkRhsClosure :: DynFlags -> Id -> CostCentreStack
              -> CgStgExpr
              -> FCode (CgIdInfo, FCode CmmAGraph)
 
+{-
+    TODO: Consider handling this too. Not sure if it's going to save us much to
+          so this needs benchmarking.
+
 ---------- unpackCString# --------------------
 mkRhsClosure    dflags bndr _cc
                 []         -- No free variables, because this is top-level
@@ -261,7 +265,18 @@ mkRhsClosure    dflags bndr _cc
   , StgApp fn [arg] <- expr
   , idName fn == unpackCStringName
   = -- TODO: What to do with ticks?
+    -- A non-top-level unpackCString# closure. Most unpackCString# closures are
+    -- floted to the top-level, but sometimes we see simplifier-generated thunks
+    -- like:
+    --
+    --     sat_sK0 [Occ=Once] :: [GHC.Types.Char]
+    --     [LclId] =
+    --         {} \u []
+    --             GHC.CString.unpackCString#
+    --                 "Oops! The program has entered an `absent' argument!\n"#;
+    --
     pprPanic "mkRhsClosure" (text "unpackCString# closure:" <+> ppr expr)
+-}
 
 {- mkRhsClosure looks for two special forms of the right-hand side:
         a) selector thunks

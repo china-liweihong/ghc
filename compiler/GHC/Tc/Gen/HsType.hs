@@ -2819,10 +2819,13 @@ kindGeneralizeAll ty = do { traceTc "kindGeneralizeAll" empty
                           ; kindGeneralizeSome (const True) ty }
 
 -- | Specialized version of 'kindGeneralizeSome', but where no variables
--- can be generalized. Use this variant when it is unknowable whether metavariables
--- might later be constrained.
--- See Note [Recipe for checking a signature] for why and where this
--- function is needed.
+-- can be generalized, but perhaps some may neeed to be promoted.
+-- Use this variant when it is unknowable whether metavariables might
+-- later be constrained.
+--
+-- To see why this promotion is needed, see
+-- Note [Recipe for checking a signature], and especially
+-- Note [Promotion in signatures].
 kindGeneralizeNone :: TcType  -- needn't be zonked
                    -> TcM ()
 kindGeneralizeNone ty
@@ -3160,7 +3163,7 @@ tcHsPartialSigType ctxt sig_ty
 
                   ; return (wcs, wcx, theta, tau) }
 
-         -- No kind-generalization here:
+       -- No kind-generalization here, but perhaps some promotion
        ; kindGeneralizeNone (mkSpecForAllTys implicit_tvs $
                              mkSpecForAllTys explicit_tvs $
                              mkPhiTy theta $
@@ -3171,6 +3174,12 @@ tcHsPartialSigType ctxt sig_ty
        -- See Note [Extra-constraint holes in partial type signatures]
        ; emitNamedWildCardHoleConstraints wcs
 
+       -- Zonk, so that any nested foralls can "see" their occurrences
+       ; implicit_tvs <- mapM zonkTcTyVarToTyVar implicit_tvs
+       ; explicit_tvs <- mapM zonkTcTyVarToTyVar explicit_tvs
+       ; theta        <- mapM zonkTcType theta
+       ; tau          <- zonkTcType tau
+
          -- We return a proper (Name,TyVar) environment, to be sure that
          -- we bring the right name into scope in the function body.
          -- Test case: partial-sigs/should_compile/LocalDefinitionBug
@@ -3179,7 +3188,7 @@ tcHsPartialSigType ctxt sig_ty
 
       -- NB: checkValidType on the final inferred type will be
       --     done later by checkInferredPolyId.  We can't do it
-      --     here because we don't have a complete tuype to check
+      --     here because we don't have a complete type to check
 
        ; traceTc "tcHsPartialSigType" (ppr tv_prs)
        ; return (wcs, wcx, tv_prs, theta, tau) }
@@ -3198,11 +3207,30 @@ tcPartialContext hs_theta
 
 {- Note [Checking partial type signatures]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-See also Note [Recipe for checking a signature]
+This Note is about tcHsPartialSigType.  See also
+Note [Recipe for checking a signature]
 
 When we have a partial signature like
-   f,g :: forall a. a -> _
+   f :: forall a. a -> _
 we do the following
+
+* tcHsPartialSigType does not make quantified type (forall a. blah)
+  and then instantiate it -- it makes no sense to instantiate a type
+  with wildcards in it.  Rather, tcHsPartialSigType just returns the
+  'a' and the 'blah' separately.
+
+  Nor, for the same reason, do we push a level in tcHsPartialSigType.
+
+* We instantiate 'a' to a unification variable, a TyVarTv, and /not/
+  a skolem; hence the "_Tv" in bindExplicitTKBndrs_Tv.  Consider
+    f :: forall a. a -> _
+    g :: forall b. _ -> b
+    f = g
+    g = g
+  They are typechecked as a recursive group, with monomorphic types,
+  so 'a' and 'b' will get unified together.  Very like kind inference
+  for mutually recursive data types (sans CUSKs or SAKS); see
+  Note [Cloning for tyvar binders] in GHC.Tc.Gen.HsType
 
 * In GHC.Tc.Gen.Sig.tcUserSigType we return a PartialSig, which (unlike
   the companion CompleteSig) contains the original, as-yet-unchecked
@@ -3218,12 +3246,27 @@ we do the following
      g x = True
   It's really as if we'd written two distinct signatures.
 
-* Note that we don't make quantified type (forall a. blah) and then
-  instantiate it -- it makes no sense to instantiate a type with
-  wildcards in it.  Rather, tcHsPartialSigType just returns the
-  'a' and the 'blah' separately.
+* Nested foralls. Consider
+     f :: forall b. (forall a. a -> _) -> b
+  We do /not/ allow the "_" to be instantiated to 'a'; but we do
+  (as before) allow it to be instantiated to the (top level) 'b'.
+  Why not?  Because suppose
+     f x = (x True, x 'c')
+  We must instantiate that (forall a. a -> _) when typechecking
+  f's body, so we must know precisely where all the a's are!
 
-  Nor, for the same reason, do we push a level in tcHsPartialSigType.
+  We achieve this in the usual way: we push a level at a forall,
+  so now the unification variable for the "_" can't unify with
+  'a'.
+
+* Just as for ordinary signatures, we must zonk the type after
+  kind-checking it, to ensure that all the nested forall binders can
+  see their occurrenceds
+
+  Just as for ordinary signatures, this zonk also gets any Refl casts
+  out of the way of instantiation.  Example: #18008 had
+       foo :: (forall a. (Show a => blah) |> Refl) -> _
+  and that Refl cast messed things up.  See #18062.
 
 Note [Extra-constraint holes in partial type signatures]
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

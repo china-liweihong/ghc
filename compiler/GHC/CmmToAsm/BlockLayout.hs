@@ -240,7 +240,34 @@ import Control.Monad (foldM)
   Assuming that Lwork is large the chance that the "call" ends up
   in the same cache line is also fairly small.
 
--}
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  ~~~ Note [Layout relevant edge weights]
+  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+  The input to the chain based code layout algorithm is a CFG
+  with edges annotated with their frequency.
+
+  In particular:
+
+  * Edges which cross an info table are less relevant than others.
+
+    If we place the blocks across this edge next to each other
+    they are still separated by the info table which negates
+    much of the benefit.
+
+  * Conditional branches and switches are slightly less relevant.
+
+    We can completely remove unconditional jumps by placing them
+    next to each other. This is not true for these edges so we
+    apply a small modifier to ensure edges which we can eliminate
+    are considered first. See also #18053.
+
+  * Edges constituted by a call are ignored.
+
+    Considering these hardly helped with performance and ignoring
+    them helps quite a bit to improve compiler performance.
+
+  -}
 
 
 -- | Look at X number of blocks in two chains to determine
@@ -654,17 +681,29 @@ sequenceChain  info weights'     blocks@((BasicBlock entry _):_) =
         directEdges :: [CfgEdge]
         directEdges = sortBy (flip compare) $ catMaybes . map relevantWeight $ (infoEdgeList weights)
           where
+            -- | Apply modifiers to turn edge frequencies into useable weights
+            -- for computing code layout.
+            -- See also Note [Layout relevant edge weights]
             relevantWeight :: CfgEdge -> Maybe CfgEdge
             relevantWeight edge@(CfgEdge from to edgeInfo)
                 | (EdgeInfo CmmSource { trans_cmmNode = CmmCall {} } _) <- edgeInfo
-                -- Ignore edges across calls
+                -- Ignore edges across calls.
                 = Nothing
                 | mapMember to info
                 , w <- edgeWeight edgeInfo
-                -- The payoff is small if we jump over an info table
+                -- The payoff is quite small if we jump over an info table
                 = Just (CfgEdge from to edgeInfo { edgeWeight = w/8 })
+                | (EdgeInfo CmmSource { trans_cmmNode = exitNode } _) <- edgeInfo
+                , cantEliminate exitNode
+                , w <- edgeWeight edgeInfo
+                -- A small penalty to edge types which we can't optimize away by layout.
+                = Just (CfgEdge from to edgeInfo { edgeWeight = w * 0.96875 })
                 | otherwise
                 = Just edge
+                where
+                  cantEliminate CmmCondBranch {} = True
+                  cantEliminate CmmSwitch {} = True
+                  cantEliminate _ = False
 
         blockMap :: LabelMap (GenBasicBlock i)
         blockMap
